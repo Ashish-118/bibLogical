@@ -59,3 +59,16 @@ enum QuizType {
   true_false
   order_sequence
 }
+
+model User {
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userName String  @unique
+  email    String  @unique
+  password String  @default("")
+  country  String? @default("")
+  rank     String? @default("Heathen")
+  active   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
