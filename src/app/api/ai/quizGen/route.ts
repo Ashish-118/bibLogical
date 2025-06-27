@@ -9,8 +9,8 @@ export async function POST(req: NextRequest) {
         const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
         const results = [];
 
-
-        for (let i = 0; i < count; i++) {
+        let i = 0;
+        while (results.length < count) {
             const prompt = `
             You are a Bible quiz question generator for a multiplayer Bible learning game.
             
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
             - Question Type: Choose from one of the following randomly:  "true_false", "mcq"
             - The question must align with the **overall biblical narrative** and **theological accuracy**, considering dependencies across books.
             - Ensure the question is **not repetitive** with previous questions.
-
+    
             
             Respond ONLY in valid JSON format like this:
             
@@ -43,10 +43,10 @@ export async function POST(req: NextRequest) {
             - For "fill_blank", provide the sentence with one key word blanked out and optionally mark its index in formatHints.
             - For "quote_guess", include the verse or quote and ask **who said it** or **where it's from**.
             - Only return **valid JSON**, no comments, no markdown, no surrounding text.
-            
+            ***MOST IMPORTANT***:  just give me the json format provided above, do not add any additional text or explanation , just the json format 
+
             Make sure the quiz is **contextually sound across the entire Bible**, and avoids misleading conclusions from partial readings.
             `;
-
 
             const chatCompletion = await client.chatCompletion({
                 provider: "nscale",
@@ -62,16 +62,20 @@ export async function POST(req: NextRequest) {
             const responseText = chatCompletion.choices[0]?.message?.content;
             if (!responseText) continue;
 
-            const jsonStart = responseText.indexOf('{');
-            if (jsonStart === -1) continue;
+            // Try to extract clean JSON using regex
+            const match = responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/({[\s\S]*})/);
+            if (!match) {
+                console.warn(`No valid JSON found in response on iteration ${i++}`);
+                continue;
+            }
 
-            const jsonString = responseText.slice(jsonStart);
+            const jsonString = match[1].trim();
 
             try {
                 const parsed = JSON.parse(jsonString);
                 results.push(parsed);
             } catch (e) {
-                console.warn(`Failed to parse response on iteration ${i + 1}`, responseText);
+                console.warn(`Failed to parse response on iteration ${i++}`, jsonString);
             }
         }
 
@@ -92,7 +96,7 @@ export async function POST(req: NextRequest) {
         }
         const { verifiedQuestions } = await Verification.json();
         if (!verifiedQuestions || !Array.isArray(verifiedQuestions)) {
-            throw new Error('Invalid response from quiz verification');
+            return NextResponse.json({ error: "there is some error in Verified Questions" }, { status: 401 });
         }
         results.length = 0; // Clear the original results array
         results.push(...verifiedQuestions); // Add verified questions back
@@ -102,7 +106,8 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             message: "quizGen api done along with the verification",
-            quizzes: results
+            questions: results,
+            length: results.length,
         });
     } catch (err: any) {
         console.error('Error generating quizzes:', err);

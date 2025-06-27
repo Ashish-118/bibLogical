@@ -35,20 +35,23 @@ datasource db {
 // }
 
 model QuizBank {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  question    String
-  answer      String
-  options     String[]
-  topic       String
-  level       Int
-  type        QuizType
-  explanation String
-  formatHints String[]
-  AiGenerated Boolean  @default(false)
-  Verified    Boolean  @default(false)
-  useCount    Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  question     String
+  answer       Int
+  options      String[]
+  topic        String
+  level        Int //  1 - 10
+  type         QuizType
+  explanation  String
+  formatHints  String[]
+  AiGenerated  Boolean  @default(false)
+  Verified     Boolean  @default(false)
+  useCount     Int      @default(0)
+  likeCount    Int      @default(0)
+  dislikeCount Int      @default(0)
+  errorCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 enum QuizType {
