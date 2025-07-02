@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
             }
             
             Special Rules:
+            - answer should be a number of type INT representing the index of the correct option in the options array.
             - Do **not** base your answer only on a single verse or isolated context.
             - For "order_sequence", use \`formatHints: { "correctOrder": ["Step 1", "Step 2", ...] }\`
             - For "fill_blank", provide the sentence with one key word blanked out and optionally mark its index in formatHints.

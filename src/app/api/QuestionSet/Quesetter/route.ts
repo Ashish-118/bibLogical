@@ -7,6 +7,7 @@ const prisma = new PrismaClient();
 
 export async function POST(req: NextRequest) {
     try {
+        const signal = req.signal;
         const redis = Redis.fromEnv();
         const testSet = await redis.set("foo", "bar");
         const testGet = await redis.get("foo");
@@ -17,11 +18,20 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Redis connection failed" }, { status: 500 });
         }
 
-        const { topic, count, lvl } = await req.json();
+        const { topic, count, lvl, gameId } = await req.json();
         const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
-        const controller = new AbortController();
-
+        // const controller = new AbortController();
+        // const timeout = setTimeout(() => controller.abort(), 10000);
         console.log("Request received for topic:", topic, "count:", count, "level:", lvl);
+
+
+        const current = await redis.get(gameId);
+        console.log("Current game data from Redis:", typeof current);
+        if (!current) {
+            return NextResponse.json({ error: "Game not found in Redis" }, { status: 404 });
+        }
+
+
 
         const fetchDB = fetch(`${BASE_URL}/api/QuestionSet/dbFetch`, {
             method: 'POST',
@@ -29,6 +39,7 @@ export async function POST(req: NextRequest) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ level: lvl }),
+            signal, // Use the controller's signal for timeout
         })
             .then((res) => res.json())
             .then((data) => ({ source: "db", questions: data.questions }));
@@ -42,10 +53,13 @@ export async function POST(req: NextRequest) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ topic: topic, count: count, level: lvl }),
+            signal, // Use the controller's signal for timeout
         })
             .then((res) => res.json())
             .then((data) => ({ source: "ai", questions: data.questions }));
         // console.log("FETCH AI-->", fetchAI);
+
+
 
         const winner = await Promise.race([fetchDB, fetchAI]);
 
@@ -54,15 +68,51 @@ export async function POST(req: NextRequest) {
         const other = winner.source === "db" ? fetchAI : fetchDB;
 
 
-        const gameId = `quiz:${Date.now()}`; // Unique key per game session
+        // const gameId = `quiz:${Date.now()}`; // Unique key per game session
 
         // Cache the winner in Redis
-        await redis.set(gameId, JSON.stringify({ questions: winner.questions }), { ex: 600 }); // 10 mins
+        // await redis.set(gameId, JSON.stringify({ questions: winner.questions }), { ex: 600 }); // 10 mins
 
 
+
+
+        // Parse current game data and ensure it has a questions property
+        const gameData = typeof current === "string" ? JSON.parse(current) : current as { [key: string]: any };
+
+        (gameData as { questions: any[] }).questions = winner.questions;
+
+        // Save back to Redis
+        await redis.set(gameId, JSON.stringify(gameData));
+
+
+        // await redis.set(gameId, JSON.stringify({ questions: winner.questions })); // no expiration for now
 
         const otherResult = await other;
-        await redis.set(gameId, JSON.stringify({ questions: otherResult.questions }), { ex: 600 });
+
+        // clearTimeout(timeout);
+
+        const existingDataStr = await redis.get(gameId);
+
+        if (!existingDataStr) {
+            return NextResponse.json({ error: "GameID not found in Redis  while storing otherResult questions" }, { status: 404 });
+        }
+        const existingData = typeof existingDataStr === "string" ? JSON.parse(existingDataStr) : (existingDataStr ?? {});
+
+        const updatedQuestions = [
+            ...(existingData.questions || []),
+            ...(otherResult.questions || [])
+        ];
+
+        const updatedGameData = {
+            ...existingData,
+            questions: updatedQuestions,
+        };
+
+        await redis.set(gameId, JSON.stringify(updatedGameData));
+
+
+
+        // await redis.set(gameId, JSON.stringify({ questions: otherResult.questions }));
         console.log("Other result:", otherResult);
 
         if (otherResult.source === "ai" || winner.source === "ai") {
@@ -73,18 +123,18 @@ export async function POST(req: NextRequest) {
             }
 
             // Prepare question data
-            interface Question {
-                question: string;
-                type: string;
-                topic: QuizType;
-                level: number;
-                options: string[];
-                answer: number;
-                useCount: number;
-                explanation: string;
-                formatHints: string[];
-                AiGenerated: boolean;
-            }
+            // interface Question {
+            //     question: string;
+            //     type: string;
+            //     topic: QuizType;
+            //     level: number;
+            //     options: string[];
+            //     answer: number;
+            //     useCount: number;
+            //     explanation: string;
+            //     formatHints: string[];
+            //     AiGenerated: boolean;
+            // }
 
             const questionData = Tosave.questions.map((q: any) => ({
                 AiGenerated: true,
@@ -160,9 +210,13 @@ export async function POST(req: NextRequest) {
             otherSource: otherResult.source,
             otherQuestions: otherResult.questions,
             otherLength: otherResult.questions.length,
+            TotalQuestions: (winner.questions.length + otherResult.questions.length),
             message: "Quiz questions prepared from first successful route.",
-        });
+        }, { status: 200 });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message || "Internal error" }, { status: 500 });
+        if (error.name === 'AbortError') {
+            return NextResponse.json({ error: "Request timed out while preparing questions in questionSetter Api" }, { status: 504 });
+        }
+        return NextResponse.json({ error: error.message || "Internal error while preparing question in question setter api" }, { status: 500 });
     }
 }

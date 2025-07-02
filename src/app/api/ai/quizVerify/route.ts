@@ -17,7 +17,9 @@ export async function POST(req: NextRequest) {
 You are an expert theologian AI model with comprehensive knowledge of the entire Bible—Old and New Testaments—and sound Christian doctrine. Your task is to verify and correct a set of AI-generated Bible quiz questions.
 
 Instructions:
+
 1. Ensure that each question, answer, options, explanation, and formatHints are theologically correct and biblically accurate based on the whole Bible.
+# answer should be a number of type INT representing the index of the correct option in the options array.
 2. Evaluate:
    - Whether the question is **valid and clearly phrased**.
    - Whether the correct answer is truly correct **based on Scripture**.
