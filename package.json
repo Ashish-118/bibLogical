@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:socket": "NODE_OPTIONS='--loader ts-node/esm --trace-warnings --no-warnings' ts-node server.mts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -22,6 +23,8 @@
     "ai": "^4.3.16",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
     "ioredis": "^5.6.1",
     "lucide-react": "^0.513.0",
     "next": "15.3.3",
@@ -29,11 +32,14 @@
     "react-dom": "^19.0.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
-    "tailwind-merge": "^3.3.0"
+    "tailwind-merge": "^3.3.0",
+    "ts-node": "^10.9.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4.1.8",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/express": "^5.0.3",
     "@types/node": "^20.19.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
