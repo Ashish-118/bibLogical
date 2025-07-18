@@ -101,6 +101,16 @@ export async function POST(req: NextRequest) {
 
         await redis.set(gameId, JSON.stringify({
             players: [userId, match],
+            GameStats: {
+                [userId]: {
+                    xp: 0,
+                    no_of_correct_answers: 0,
+                },
+                [match]: {
+                    xp: 0,
+                    no_of_correct_answers: 0,
+                }
+            },
             questions: [],
         }));
         //

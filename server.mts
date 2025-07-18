@@ -3,6 +3,12 @@ import next from "next";
 import { Server } from "socket.io";
 import type { Server as IOServer, Socket } from "socket.io";
 import { Redis } from "@upstash/redis";
+import { promises } from "node:dns";
+import { PrismaClient } from "@prisma/client";
+
+import { json } from "node:stream/consumers";
+
+const prisma = new PrismaClient();
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME || "localhost";
@@ -61,9 +67,15 @@ const startTimerForGame = ({
     const handleAnswer = async ({
         userId,
         optionNum,
+        gameId,
+        time
     }: {
+
         userId: string;
         optionNum: number;
+        gameId: string;
+        time: number;
+
     }) => {
         const gameDataRaw = await redis.get(gameId);
         if (!gameDataRaw) {
@@ -86,11 +98,22 @@ const startTimerForGame = ({
         if (updatedQuestion.responses.some((r: Response) => r.userId === userId)) {
             return; // already answered
         }
+        let XP;
+        if (optionNum === question.correctOption) {
+            XP = time + 10;
+        }
+        else {
+            XP = -time;
+        }
+
+        gameData.GameStats.userId.xp += XP;
+        gameData.GameStats.userId.no_of_correct_answers += (optionNum === question.correctOption ? 1 : 0);
 
         updatedQuestion.responses.push({
-            userId,
-            optionNum,
-            timeTaken: duration - timeLeft
+            user: userId,
+            selectedOption: optionNum,
+            timeTaken: time,
+            xp: XP
         });
 
         await redis.set(gameId, JSON.stringify(gameData));
@@ -98,7 +121,7 @@ const startTimerForGame = ({
         if (optionNum === question.correctOption) {
             clearInterval(interval);
             gameTimers.delete(gameId);
-            io.to(gameId).emit("answered", { userId, gameId, optionNum });
+            io.to(gameId).emit("answered", { userId, gameId, optionNum, XP });
             return;
         }
 
@@ -122,6 +145,55 @@ const startTimerForGame = ({
     });
 };
 
+
+const saveLeaderboard = async (gameId: string, socket: Socket): Promise<any> => {
+    const gameDataRaw = await redis.get(gameId);
+    if (!gameDataRaw) {
+        socket.emit("error-message", { error: "Game not found in Redis" });
+        return;
+    }
+
+    const gameData = typeof gameDataRaw === "string"
+        ? JSON.parse(gameDataRaw)
+        : (gameDataRaw ?? {});
+
+    const players = gameData.players;
+    const players_save: { winner: string[]; looser: string[] } = {
+        winner: [],
+        looser: []
+    }
+
+    const gameStats: any = gameData.GameStats;
+    if (gameStats[players[0]].no_of_correct_answers !== gameStats[players[1]].no_of_correct_answers) {
+        if (gameStats[players[0]].no_of_correct_answers > gameStats[players[1]].no_of_correct_answers) {
+            players_save.winner.push(players[0]);
+            players_save.looser.push(players[1]);
+        } else {
+            players_save.winner.push(players[1]);
+            players_save.looser.push(players[0]);
+        }
+    }
+    else {
+        if (gameStats[players[0]].xp > gameStats[players[1]].xp) {
+            players_save.winner.push(players[0]);
+            players_save.looser.push(players[1]);
+        }
+        else {
+            players_save.winner.push(players[1]);
+            players_save.looser.push(players[0]);
+        }
+    }
+
+    const saveQuizSet: any = gameData.questions;
+    const savedData = await prisma.contest.create({
+        data: {
+            GameId: gameId,
+            quizSet: saveQuizSet,
+            players: players_save
+        }
+    });
+}
+
 app.prepare().then(() => {
     const httpServer = createServer(handle);
     const io = new Server(httpServer);
@@ -139,8 +211,8 @@ app.prepare().then(() => {
         socket.on("ready-check", async ({ gameId }) => {
             const gameDataRaw = await redis.get(gameId);
             if (!gameDataRaw) {
-                socket.emit("error-message", { error: "Game not found" });
-                return;
+                return socket.emit("error-message", { error: "Game not found" });
+
             }
 
             const gameData = typeof gameDataRaw === "string"
@@ -154,13 +226,14 @@ app.prepare().then(() => {
         socket.on("next-question", ({ gameId }) => {
             const questions = gameQuestions.get(gameId);
             if (!questions) {
-                socket.emit("error-message", { error: "No questions available" });
-                return;
+                return socket.emit("error-message", { error: "No questions available" });
+
             }
 
             const index = currentQuestionIndex.get(gameId) || 0;
             if (index >= questions.length) {
                 io.to(gameId).emit("quiz-complete");
+                saveLeaderboard(gameId, socket);
                 return;
             }
 
